@@ -269,7 +269,7 @@ instruct vaddI(vReg dst, vReg src1, vReg src2) %{
   ins_pipe(pipe_slow);
 %}
 
-instruct vaddI_masked(vReg dst_src1, vReg src2, pRegGov mask) %{
+instruct vaddI_masked(vReg dst_src1, vReg src2, vReg mask) %{
   match(Set dst_src1 (AddVI (Binary dst_src1 src2) mask));
   ins_cost(VEC_COST);
   format %{ "vaddI_masked $dst_src1, $src2, $mask\t#@vaddI" %}
