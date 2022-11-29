@@ -865,6 +865,42 @@ reg_class vectora_reg(
     V31, V31_H, V31_J, V31_K
 );
 
+// Class for all 64bit vector registers
+reg_class vectord_reg(
+    V0, V0_H,
+    V1, V1_H,
+    V2, V2_H,
+    V3, V3_H,
+    V4, V4_H,
+    V5, V5_H,
+    V6, V6_H,
+    V7, V7_H,
+    V8, V8_H,
+    V9, V9_H,
+    V10, V10_H,
+    V11, V11_H,
+    V12, V12_H,
+    V13, V13_H,
+    V14, V14_H,
+    V15, V15_H,
+    V16, V16_H,
+    V17, V17_H,
+    V18, V18_H,
+    V19, V19_H,
+    V20, V20_H,
+    V21, V21_H,
+    V22, V22_H,
+    V23, V23_H,
+    V24, V24_H,
+    V25, V25_H,
+    V26, V26_H,
+    V27, V27_H,
+    V28, V28_H,
+    V29, V29_H,
+    V30, V30_H,
+    V31, V31_H
+);
+
 // Class for 64 bit register f0
 reg_class f0_reg(
     F0, F0_H
@@ -917,6 +953,14 @@ reg_class v5_reg(
 
 // class for condition codes
 reg_class reg_flags(RFLAGS);
+
+// Class for all RVV predicate registers.
+reg_class pr_reg (
+    V0,
+    V0_H,
+    V0_J,
+    V0_K
+);
 
 %}
 
@@ -1873,6 +1917,7 @@ const bool Matcher::match_rule_supported_vector_masked(int opcode, int vlen, Bas
     case Op_LoadVector:
     case Op_LoadVectorMasked:
     case Op_AddVI:
+    case Op_VectorLoadMask:
       return UseRVV;
     default:
       return false;
@@ -1891,7 +1936,7 @@ const bool Matcher::vector_needs_partial_operations(Node* node, const TypeVect* 
 }
 
 const RegMask* Matcher::predicate_reg_mask(void) {
-  return &_ZR_REG_mask;
+  return &_PR_REG_mask;
 }
 
 const TypeVectMask* Matcher::predicate_reg_type(const Type* elemTy, int length) {
@@ -1992,8 +2037,8 @@ MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* generic_opnd, 
   assert(Matcher::is_generic_vector(generic_opnd), "not generic");
   switch (ideal_reg) {
     case Op_VecA: return new vRegOper();
-    case Op_RegL: return new iRegLOper();
-    case Op_VecX: return new iRegLOper();
+    case Op_VecD: return new vecDOper();
+    case Op_VecX: return new vecXOper();
   }
   ShouldNotReachHere();
   return NULL;
@@ -3914,8 +3959,28 @@ operand inline_cache_RegP(iRegP reg)
 
 operand pRegGov()
 %{
-  constraint(ALLOC_IN_RC(zr_reg));
+  constraint(ALLOC_IN_RC(pr_reg));
   match(RegVectMask);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vecD()
+%{
+  constraint(ALLOC_IN_RC(vectord_reg));
+  match(VecD);
+
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vecX()
+%{
+  constraint(ALLOC_IN_RC(vectora_reg));
+  match(VecX);
+
   op_cost(0);
   format %{ %}
   interface(REG_INTER);
