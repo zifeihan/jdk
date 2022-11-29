@@ -1690,6 +1690,11 @@ Node* Matcher::Label_Root(const Node* n, State* svec, Node* control, Node*& mem)
       control = Label_Root(m, s, control, mem);
       if (C->failing()) return NULL;
     }
+
+    if ( s->_leaf->ideal_reg() == Op_VectorLoadMask)
+      {
+        warning("test 111");
+      }
   }
 
   // Call DFA to match this node, and return
@@ -2990,6 +2995,7 @@ void State::dump(int depth) {
   }
   tty->print("--N: ");
   _leaf->dump();
+  warning("test:%s",_leaf->Name());
   uint i;
   for (i = 0; i < _LAST_MACH_OPER; i++) {
     // Check for valid entry
@@ -3005,6 +3011,7 @@ void State::dump(int depth) {
   }
   tty->cr();
 
+  warning("---------------");
   for (i = 0; i < 2; i++) {
     if (_kids[i]) {
       _kids[i]->dump(depth + 1);

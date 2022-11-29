@@ -122,26 +122,12 @@ instruct storeV(vReg src, vmemA mem) %{
   ins_pipe(pipe_slow);
 %}
 
-instruct vloadmaskB_rvv(pRegGov dst, vReg src, rFlagsReg cr) %{
+instruct vloadmask_extend_rvv(pRegGov dst, vReg src, vReg tmp, rFlagsReg cr) %{
+  predicate(Matcher::vector_element_basic_type(n) != T_BYTE);
   match(Set dst (VectorLoadMask src));
-  effect(KILL cr);
-  format %{ "vloadmaskB_rvv $dst, $src\t# KILL cr" %}
+  effect(TEMP tmp, KILL cr);
+  format %{ "vloadmask_extend_rvv $dst, $src\t# KILL $tmp, cr" %}
   ins_encode %{
-    __ vsetvli(t0, x0, Assembler::e8);
-    __ vmsne_vi(as_VectorRegister($dst$$reg),as_VectorRegister($src$$reg), 0);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-
-
-
-instruct vstoremaskB_sve(vReg dst, pRegGov src, immI_1 size) %{
-  match(Set dst (VectorStoreMask src size));
-  format %{ "vstoremaskB_sve $dst, $src" %}
-  ins_encode %{
-    __ vsetvli(t0, x0, Assembler::e8);
-    __ vand_vv(as_VectorRegister($dst$$reg), as_VectorRegister($src$$reg),as_VectorRegister($src$$reg));
   %}
   ins_pipe(pipe_slow);
 %}
@@ -269,18 +255,12 @@ instruct vaddI(vReg dst, vReg src1, vReg src2) %{
   ins_pipe(pipe_slow);
 %}
 
-instruct vaddI_masked(vReg dst_src1, vReg src2, vReg mask) %{
+instruct vaddI_masked(vReg dst_src1, vReg src2, pRegGov mask) %{
   match(Set dst_src1 (AddVI (Binary dst_src1 src2) mask));
   ins_cost(VEC_COST);
   format %{ "vaddI_masked $dst_src1, $src2, $mask\t#@vaddI" %}
   ins_encode %{
-    BasicType bt = Matcher::vector_element_basic_type(this);
-    Assembler::SEW sew = Assembler::elemtype_to_sew(bt);
-    __ vsetvli(t0, x0, sew);
-    __ vadd_vv(as_VectorRegister($dst_src1$$reg),
-               as_VectorRegister($dst_src1$$reg),
-               as_VectorRegister($src2$$reg),
-               Assembler::v0_t);
+
   %}
   ins_pipe(pipe_slow);
 %}

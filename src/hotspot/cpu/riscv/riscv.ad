@@ -885,6 +885,11 @@ reg_class f3_reg(
     F3, F3_H
 );
 
+// class for vector register v0
+reg_class v0_reg(
+    R0, R0_H
+);
+
 // class for vector register v1
 reg_class v1_reg(
     V1, V1_H, V1_J, V1_K
@@ -913,10 +918,6 @@ reg_class v5_reg(
 // class for condition codes
 reg_class reg_flags(RFLAGS);
 
-// Class for all RVV predicate registers.
-reg_class pr_reg (
-    V0
-);
 %}
 
 //----------DEFINITION BLOCK---------------------------------------------------
@@ -1605,6 +1606,9 @@ uint MachSpillCopyNode::implementation(CodeBuffer *cbuf, PhaseRegAlloc *ra_, boo
         }
         break;
       case rc_stack:
+        if (ideal_reg() == Op_RegVectMask) {
+          st->print("++++++++++++++++");
+        }
         if (dst_lo_rc == rc_int) {  // stack --> gpr load
           if (this->ideal_reg() == Op_RegI) {
             __ unspill(as_Register(Matcher::_regEncode[dst_lo]), is64, src_offset);
@@ -1652,6 +1656,9 @@ uint MachSpillCopyNode::implementation(CodeBuffer *cbuf, PhaseRegAlloc *ra_, boo
     } else {
       st->print("\t# spill size = %d", is64 ? 64 : 32);
     }
+     if (ideal_reg() == Op_RegVectMask) {
+          st->print("+++++++-----+++++++++");
+      }
   }
 
   return 0;
@@ -1884,7 +1891,7 @@ const bool Matcher::vector_needs_partial_operations(Node* node, const TypeVect* 
 }
 
 const RegMask* Matcher::predicate_reg_mask(void) {
-  return &_PR_REG_mask;
+  return &_ZR_REG_mask;
 }
 
 const TypeVectMask* Matcher::predicate_reg_type(const Type* elemTy, int length) {
@@ -1962,10 +1969,17 @@ const int Matcher::min_vector_size(const BasicType bt) {
 // Vector ideal reg.
 const uint Matcher::vector_ideal_reg(int len) {
   assert(MaxVectorSize >= len, "");
-  if (UseRVV) {
+  if (UseRVV && 16 < len && len <= 256) {
     return Op_VecA;
   }
-
+  
+  switch(len) {
+    // For 16-bit/32-bit mask vector, reuse VecD.
+    case  2:
+    case  4:
+    case  8: return Op_RegL;
+    case 16: return Op_RegL;
+  }
   ShouldNotReachHere();
   return 0;
 }
@@ -1974,8 +1988,14 @@ const int Matcher::scalable_vector_reg_size(const BasicType bt) {
   return Matcher::max_vector_size(bt);
 }
 
-MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
-  ShouldNotReachHere(); // generic vector operands not supported
+MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* generic_opnd, uint ideal_reg, bool is_temp) {
+  assert(Matcher::is_generic_vector(generic_opnd), "not generic");
+  switch (ideal_reg) {
+    case Op_VecA: return new vRegOper();
+    case Op_RegL: return new iRegLOper();
+    case Op_VecX: return new iRegLOper();
+  }
+  ShouldNotReachHere();
   return NULL;
 }
 
@@ -3894,7 +3914,7 @@ operand inline_cache_RegP(iRegP reg)
 
 operand pRegGov()
 %{
-  constraint(ALLOC_IN_RC(pr_reg));
+  constraint(ALLOC_IN_RC(zr_reg));
   match(RegVectMask);
   op_cost(0);
   format %{ %}
