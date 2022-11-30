@@ -867,7 +867,6 @@ reg_class vectora_reg(
 
 // Class for all 64bit vector registers
 reg_class vectord_reg(
-    V0, V0_H,
     V1, V1_H,
     V2, V2_H,
     V3, V3_H,
@@ -2022,8 +2021,8 @@ const uint Matcher::vector_ideal_reg(int len) {
     // For 16-bit/32-bit mask vector, reuse VecD.
     case  2:
     case  4:
-    case  8: return Op_RegL;
-    case 16: return Op_RegL;
+    case  8: return Op_VecD;
+    case 16: return Op_VecX;
   }
   ShouldNotReachHere();
   return 0;
@@ -3565,6 +3564,9 @@ operand vReg()
 %{
   constraint(ALLOC_IN_RC(vectora_reg));
   match(VecA);
+  match(VecD);
+  match(VecX);
+
   op_cost(0);
   format %{ %}
   interface(REG_INTER);

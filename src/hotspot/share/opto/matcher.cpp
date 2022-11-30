@@ -1706,6 +1706,12 @@ Node* Matcher::Label_Root(const Node* n, State* svec, Node* control, Node*& mem)
     if( svec->valid(x) )
       break;
 
+  if (n->Opcode() == Op_AddVI) {
+    n->dump();
+    svec->dump();
+    warning("---------");
+  }
+
   if (x >= _LAST_MACH_OPER) {
     n->dump();
     svec->dump();
