@@ -26,7 +26,7 @@ bash configure \
 --with-boot-jdk=${JREPATH} \
 --with-jvm-variants=server \
 --with-native-debug-symbols=internal \
---with-debug-level=fastdebug
+--with-debug-level=release
 
 make JOBS=$(nproc)
 

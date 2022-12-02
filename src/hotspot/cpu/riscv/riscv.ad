@@ -955,10 +955,7 @@ reg_class reg_flags(RFLAGS);
 
 // Class for all RVV predicate registers.
 reg_class pr_reg (
-    V0,
-    V0_H,
-    V0_J,
-    V0_K
+    V0
 );
 
 %}
@@ -3572,6 +3569,35 @@ operand vReg()
   interface(REG_INTER);
 %}
 
+operand pRegGov()
+%{
+  constraint(ALLOC_IN_RC(pr_reg));
+  match(RegVectMask);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vecD()
+%{
+  constraint(ALLOC_IN_RC(vectord_reg));
+  match(VecD);
+
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vecX()
+%{
+  constraint(ALLOC_IN_RC(vectora_reg));
+  match(VecX);
+
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
 operand vReg_V1()
 %{
   constraint(ALLOC_IN_RC(v1_reg));
@@ -3954,35 +3980,6 @@ operand inline_cache_RegP(iRegP reg)
   constraint(ALLOC_IN_RC(method_reg)); // inline_cache_reg
   match(reg);
   match(iRegPNoSp);
-  op_cost(0);
-  format %{ %}
-  interface(REG_INTER);
-%}
-
-operand pRegGov()
-%{
-  constraint(ALLOC_IN_RC(pr_reg));
-  match(RegVectMask);
-  op_cost(0);
-  format %{ %}
-  interface(REG_INTER);
-%}
-
-operand vecD()
-%{
-  constraint(ALLOC_IN_RC(vectord_reg));
-  match(VecD);
-
-  op_cost(0);
-  format %{ %}
-  interface(REG_INTER);
-%}
-
-operand vecX()
-%{
-  constraint(ALLOC_IN_RC(vectora_reg));
-  match(VecX);
-
   op_cost(0);
   format %{ %}
   interface(REG_INTER);

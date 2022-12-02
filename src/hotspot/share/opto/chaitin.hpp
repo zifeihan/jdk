@@ -151,7 +151,23 @@ private:
                                 // Meaningful only when _is_scalable is true.
 public:
   int num_regs() const { return _num_regs; }
-  void set_num_regs( int reg ) { assert( _num_regs == reg || !_num_regs, "" ); _num_regs = reg; }
+  void set_num_regs( int reg ) {
+   
+    if (_num_regs == reg || !_num_regs)
+    {
+      /* code */
+    } else {
+      warning("test----:%d,%d,%d",reg, _num_regs, _scalable_reg_slots);
+    }
+    
+     assert( _num_regs == reg || !_num_regs, "" ); _num_regs = reg; 
+
+     if (_num_regs == 4)
+     {
+      // warning("00000000000000000000000");
+     }
+     
+  }
 
   uint scalable_reg_slots() { return _scalable_reg_slots; }
   void set_scalable_reg_slots(uint slots) {

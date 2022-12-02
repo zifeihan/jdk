@@ -738,6 +738,7 @@ void PhaseChaitin::mark_ssa() {
 // cisc spillable in_RegMasks should not be done before AggressiveCoalesce.
 void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
 
+  // warning("start==================");
   // Nail down the frame pointer live range
   uint fp_lrg = _lrg_map.live_range_id(_cfg.get_root_node()->in(1)->in(TypeFunc::FramePtr));
   lrgs(fp_lrg)._cost += 1e12;   // Cost is infinite
@@ -760,6 +761,7 @@ void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
       // Get virtual register number, same as LiveRanGe index
       uint vreg = _lrg_map.live_range_id(n);
       LRG& lrg = lrgs(vreg);
+      // warning("lrg num:%d, %d,%d", lrg.num_regs(), vreg, n->_idx);
       if (vreg) {              // No vreg means un-allocable (e.g. memory)
 
         // Check for float-vs-int live range (used in register-pressure
@@ -809,8 +811,8 @@ void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
         // Limit result register mask to acceptable registers
         const RegMask &rm = n->out_RegMask();
         lrg.AND( rm );
-
         uint ireg = n->ideal_reg();
+        // warning("------------:%s,%d", n->Name(), ireg);
         assert( !n->bottom_type()->isa_oop_ptr() || ireg == Op_RegP,
                 "oops must be in Op_RegP's" );
 
@@ -842,6 +844,7 @@ void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
             // If it is allocated in stack, we need to get the actual
             // physical length of scalable predicate register.
             lrg.set_scalable_reg_slots(Matcher::scalable_predicate_reg_slots());
+            // warning("++++++:%s,%d", n->Name(), Matcher::scalable_predicate_reg_slots());
           }
         }
         assert(n_type->isa_vect() == NULL || lrg._is_vector ||
@@ -969,6 +972,8 @@ void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
           assert(Matcher::vector_size_supported(T_FLOAT,RegMask::SlotsPerVecD), "sanity");
           assert(RegMask::num_registers(Op_VecD) == RegMask::SlotsPerVecD, "sanity");
           assert(lrgmask.is_aligned_sets(RegMask::SlotsPerVecD), "vector should be aligned");
+          warning("---------error");
+          // warning("------------:%s,%d", n->Name(), ireg);
           lrg.set_num_regs(RegMask::SlotsPerVecD);
           lrg.set_reg_pressure(1);
           break;
@@ -1120,6 +1125,7 @@ void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
     }
     lrg.set_degree(0);          // no neighbors in IFG yet
   }
+  // warning("end==================");
 }
 
 // Set the was-lo-degree bit.  Conservative coalescing should not change the

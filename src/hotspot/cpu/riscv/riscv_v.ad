@@ -260,7 +260,12 @@ instruct vaddI_masked(vReg dst_src1, vReg src2, pRegGov mask) %{
   ins_cost(VEC_COST);
   format %{ "vaddI_masked $dst_src1, $src2, $mask\t#@vaddI" %}
   ins_encode %{
-
+    BasicType bt = Matcher::vector_element_basic_type(this);
+    Assembler::SEW sew = Assembler::elemtype_to_sew(bt);
+    __ vsetvli(t0, x0, sew);
+    __ vadd_vv(as_VectorRegister($dst_src1$$reg),
+               as_VectorRegister($dst_src1$$reg),
+               as_VectorRegister($src2$$reg));
   %}
   ins_pipe(pipe_slow);
 %}
