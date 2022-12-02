@@ -265,7 +265,7 @@ instruct vaddI_masked(vReg dst_src1, vReg src2, pRegGov mask) %{
     __ vsetvli(t0, x0, sew);
     __ vadd_vv(as_VectorRegister($dst_src1$$reg),
                as_VectorRegister($dst_src1$$reg),
-               as_VectorRegister($src2$$reg));
+               as_VectorRegister($src2$$reg), Assembler::v0_t);
   %}
   ins_pipe(pipe_slow);
 %}
