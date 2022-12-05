@@ -2021,14 +2021,8 @@ const int Matcher::scalable_vector_reg_size(const BasicType bt) {
   return Matcher::max_vector_size(bt);
 }
 
-MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* generic_opnd, uint ideal_reg, bool is_temp) {
-  assert(Matcher::is_generic_vector(generic_opnd), "not generic");
-  switch (ideal_reg) {
-    case Op_VecA: return new vRegOper();
-    case Op_VecD: return new vecDOper();
-    case Op_VecX: return new vecXOper();
-  }
-  ShouldNotReachHere();
+MachOper* Matcher::pd_specialize_generic_vector_operand(MachOper* original_opnd, uint ideal_reg, bool is_temp) {
+  ShouldNotReachHere(); // generic vector operands not supported
   return NULL;
 }
 
@@ -3553,8 +3547,6 @@ operand vReg()
 %{
   constraint(ALLOC_IN_RC(vectora_reg));
   match(VecA);
-  match(VecD);
-  match(VecX);
 
   op_cost(0);
   format %{ %}
@@ -3565,26 +3557,6 @@ operand pRegGov()
 %{
   constraint(ALLOC_IN_RC(pr_reg));
   match(RegVectMask);
-  op_cost(0);
-  format %{ %}
-  interface(REG_INTER);
-%}
-
-operand vecD()
-%{
-  constraint(ALLOC_IN_RC(vectord_reg));
-  match(VecD);
-
-  op_cost(0);
-  format %{ %}
-  interface(REG_INTER);
-%}
-
-operand vecX()
-%{
-  constraint(ALLOC_IN_RC(vectora_reg));
-  match(VecX);
-
   op_cost(0);
   format %{ %}
   interface(REG_INTER);
