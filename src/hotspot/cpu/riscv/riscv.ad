@@ -2010,16 +2010,8 @@ const int Matcher::min_vector_size(const BasicType bt) {
 // Vector ideal reg.
 const uint Matcher::vector_ideal_reg(int len) {
   assert(MaxVectorSize >= len, "");
-  if (UseRVV && 16 < len && len <= 256) {
+  if (UseRVV) {
     return Op_VecA;
-  }
-  
-  switch(len) {
-    // For 16-bit/32-bit mask vector, reuse VecD.
-    case  2:
-    case  4:
-    case  8: return Op_VecD;
-    case 16: return Op_VecX;
   }
   ShouldNotReachHere();
   return 0;
