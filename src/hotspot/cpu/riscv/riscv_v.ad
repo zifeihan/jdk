@@ -122,12 +122,14 @@ instruct storeV(vReg src, vmemA mem) %{
   ins_pipe(pipe_slow);
 %}
 
-instruct vloadmask_extend_rvv(pRegGov dst, vReg src, vReg tmp, rFlagsReg cr) %{
-  predicate(Matcher::vector_element_basic_type(n) != T_BYTE);
+instruct vloadmask(pRegGov dst, vReg src, rFlagsReg cr) %{
   match(Set dst (VectorLoadMask src));
-  effect(TEMP tmp, KILL cr);
-  format %{ "vloadmask_extend_rvv $dst, $src\t# KILL $tmp, cr" %}
+  format %{ "vloadmask $dst, $src\t# KILL cr" %}
   ins_encode %{
+    BasicType bt = Matcher::vector_element_basic_type(this, $src);
+    Assembler::SEW sew = Assembler::elemtype_to_sew(bt);
+    __ vsetvli(t0, x0, sew);
+    __ vmsne_vx(v0, as_VectorRegister($src$$reg), x0);
   %}
   ins_pipe(pipe_slow);
 %}
