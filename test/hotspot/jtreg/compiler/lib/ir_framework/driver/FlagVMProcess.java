@@ -39,6 +39,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.io.File;
+import java.nio.file.Path;
 
 /**
  * This class prepares, creates, and runs the "flag" VM with verification of proper termination. The flag VM determines
@@ -116,8 +118,14 @@ public class FlagVMProcess {
         } catch (Exception e) {
             throw new TestRunException("Failed to execute TestFramework flag VM", e);
         }
-        testVMFlagsFile = FlagVM.TEST_VM_FLAGS_FILE_PREFIX + oa.pid()
-                          + FlagVM.FILE_POSTFIX;
+        final Path path = Paths.get(".").toAbsolutePath().getParent().toAbsolutePath();
+        final File file = path.toFile();
+        final File[] files = file.listFiles();
+        for (File file1: files){
+            if (file1.getName().contains(FlagVM.TEST_VM_FLAGS_FILE_PREFIX)) {
+                testVMFlagsFile = file1.getName();
+            }
+        }
         checkFlagVMExitCode();
     }
 
