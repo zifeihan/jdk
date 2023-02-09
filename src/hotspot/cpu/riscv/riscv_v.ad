@@ -108,169 +108,30 @@ definitions %{
 // All VEC instructions
 
 // vector load/store
-
-// Load Vector (16 bits)
-instruct loadV2(vReg dst, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_LoadVector()->memory_size() == 2);
-  match(Set dst (LoadVector mem));
-  effect(TEMP tmp1, TEMP tmp2);
-  ins_cost(VEC_COST);
-  format %{ "loadV2 $dst, $mem\t# vector (16 bits)" %}
-  ins_encode %{
-    VectorRegister dst_reg = as_VectorRegister($dst$$reg);
-    loadStore(C2_MacroAssembler(&cbuf), false, dst_reg,
-              Matcher::vector_element_basic_type(this), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, 2);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-// Store Vector (16 bits)
-instruct storeV2(vReg src, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_StoreVector()->memory_size() == 2);
-  match(Set mem (StoreVector mem src));
-  effect(TEMP tmp1, TEMP tmp2);
-  ins_cost(VEC_COST);
-  format %{ "storeV2 $mem, $src\t# vector (16 bits)" %}
-  ins_encode %{
-    VectorRegister src_reg = as_VectorRegister($src$$reg);
-    loadStore(C2_MacroAssembler(&cbuf), true, src_reg,
-              Matcher::vector_element_basic_type(this, $src), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, 2);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-// Load Vector (32 bits)
-instruct loadV4(vReg dst, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_LoadVector()->memory_size() == 4);
-  match(Set dst (LoadVector mem));
-  effect(TEMP tmp1, TEMP tmp2);
-  ins_cost(VEC_COST);
-  format %{ "loadV4 $dst, $mem\t# vector (32 bits)" %}
-  ins_encode %{
-    VectorRegister dst_reg = as_VectorRegister($dst$$reg);
-    loadStore(C2_MacroAssembler(&cbuf), false, dst_reg,
-              Matcher::vector_element_basic_type(this), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, 4);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-// Store Vector (32 bits)
-instruct storeV4(vReg src, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_StoreVector()->memory_size() == 4);
-  match(Set mem (StoreVector mem src));
-  effect(TEMP tmp1, TEMP tmp2);
-  ins_cost(VEC_COST);
-  format %{ "storeV4 $mem, $src\t# vector (32 bits)" %}
-  ins_encode %{
-    VectorRegister src_reg = as_VectorRegister($src$$reg);
-    loadStore(C2_MacroAssembler(&cbuf), true, src_reg,
-              Matcher::vector_element_basic_type(this, $src), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, 4);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-// Load Vector (64 bits)
-instruct loadV8(vReg dst, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_LoadVector()->memory_size() == 8);
-  match(Set dst (LoadVector mem));
-  effect(TEMP tmp1, TEMP tmp2);
-  ins_cost(VEC_COST);
-  format %{ "loadV8 $dst, $mem\t# vector (64 bits)" %}
-  ins_encode %{
-    VectorRegister dst_reg = as_VectorRegister($dst$$reg);
-    loadStore(C2_MacroAssembler(&cbuf), false, dst_reg,
-              Matcher::vector_element_basic_type(this), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, 8);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-// Store Vector (64 bits)
-instruct storeV8(vReg src, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_StoreVector()->memory_size() == 8);
-  match(Set mem (StoreVector mem src));
-  effect(TEMP tmp1, TEMP tmp2);
-  ins_cost(VEC_COST);
-  format %{ "storeV8 $mem, $src\t# vector (64 bits)" %}
-  ins_encode %{
-    VectorRegister src_reg = as_VectorRegister($src$$reg);
-    loadStore(C2_MacroAssembler(&cbuf), true, src_reg,
-              Matcher::vector_element_basic_type(this, $src), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, 8);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-// Load Vector (128 bits)
-instruct loadV16(vReg dst, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_LoadVector()->memory_size() == 16);
-  match(Set dst (LoadVector mem));
-  effect(TEMP tmp1, TEMP tmp2);
-  ins_cost(VEC_COST);
-  format %{ "loadV16 $dst, $mem\t# vector (128 bits)" %}
-  ins_encode %{
-    VectorRegister dst_reg = as_VectorRegister($dst$$reg);
-    loadStore(C2_MacroAssembler(&cbuf), false, dst_reg,
-              Matcher::vector_element_basic_type(this), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, 16);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-// Store Vector (128 bits)
-instruct storeV16(vReg src, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_StoreVector()->memory_size() == 16);
-  match(Set mem (StoreVector mem src));
-  effect(TEMP tmp1, TEMP tmp2);
-  ins_cost(VEC_COST);
-  format %{ "storeV16 $mem, $src\t# vector (128 bits)" %}
-  ins_encode %{
-    VectorRegister src_reg = as_VectorRegister($src$$reg);
-    loadStore(C2_MacroAssembler(&cbuf), true, src_reg,
-              Matcher::vector_element_basic_type(this, $src), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, 16);
-  %}
-  ins_pipe(pipe_slow);
-%}
-
-// Load Vector (> 128 bits)
 instruct loadV(vReg dst, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_LoadVector()->memory_size() > 16);
   match(Set dst (LoadVector mem));
   effect(TEMP tmp1, TEMP tmp2);
   ins_cost(VEC_COST);
   format %{ "loadV $dst, $mem\t# vector (rvv)" %}
   ins_encode %{
-    BasicType bt = Matcher::vector_element_basic_type(this);
-    uint length_in_bytes = Matcher::vector_length_in_bytes(this);
-    assert(length_in_bytes == MaxVectorSize, "invalid vector length");
     VectorRegister dst_reg = as_VectorRegister($dst$$reg);
     loadStore(C2_MacroAssembler(&cbuf), false, dst_reg,
               Matcher::vector_element_basic_type(this), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, MaxVectorSize);
+              as_VectorRegister($tmp1$$reg), $tmp2$$Register, Matcher::vector_length_in_bytes(this));
   %}
   ins_pipe(pipe_slow);
 %}
 
-// Store Vector (> 128 bits)
 instruct storeV(vReg src, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
-  predicate(n->as_StoreVector()->memory_size() > 16);
   match(Set mem (StoreVector mem src));
   effect(TEMP tmp1, TEMP tmp2);
   ins_cost(VEC_COST);
   format %{ "storeV $mem, $src\t# vector (rvv)" %}
   ins_encode %{
-    BasicType bt = Matcher::vector_element_basic_type(this, $src);
-    uint length_in_bytes = Matcher::vector_length_in_bytes(this, $src);
-    assert(length_in_bytes == MaxVectorSize, "invalid vector length");
     VectorRegister src_reg = as_VectorRegister($src$$reg);
     loadStore(C2_MacroAssembler(&cbuf), true, src_reg,
               Matcher::vector_element_basic_type(this, $src), as_Register($mem$$base),
-              as_VectorRegister($tmp1$$reg), $tmp2$$Register, MaxVectorSize);
+              as_VectorRegister($tmp1$$reg), $tmp2$$Register, Matcher::vector_length_in_bytes(this, $src));
   %}
   ins_pipe(pipe_slow);
 %}
