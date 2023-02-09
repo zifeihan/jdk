@@ -44,8 +44,6 @@ source %{
 
     masm.mv(temp2, length_in_bytes / type2aelembytes(bt));
 
-    warning("aaaaaaa:%d,%d",length_in_bytes, type2aelembytes(bt));
-
     masm.vmslt_vx(v0, temp1, temp2);
 
     if (is_store) {
