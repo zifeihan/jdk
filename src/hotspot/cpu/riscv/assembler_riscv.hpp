@@ -1121,18 +1121,6 @@ static Assembler::SEW elemtype_to_sew(BasicType etype) {
   return Assembler::elembytes_to_sew(type2aelembytes(etype));
 }
 
-static int sew_to_bytesize(SEW sew) {
-  int size = 0;
-  switch (sew) {
-    case e8: size = 1; break;
-    case e16:size = 2; break;
-    case e32:size = 4; break;
-    case e64:size = 8; break;
-    default: break;
-  }
-  return size;
-}
-
 #define patch_vtype(hsb, lsb, vlmul, vsew, vta, vma, vill)   \
     if (vill == 1) {                                         \
       guarantee((vlmul | vsew | vta | vma == 0),             \
