@@ -912,6 +912,11 @@ reg_class v5_reg(
 
 // class for condition codes
 reg_class reg_flags(RFLAGS);
+
+// Class for all RVV predicate registers.
+reg_class pr_reg (
+    V0
+);
 %}
 
 //----------DEFINITION BLOCK---------------------------------------------------
@@ -1859,19 +1864,34 @@ const bool Matcher::match_rule_supported_vector(int opcode, int vlen, BasicType 
 }
 
 const bool Matcher::match_rule_supported_vector_masked(int opcode, int vlen, BasicType bt) {
-  return false;
+  switch (opcode) {
+    case Op_LoadVector:
+    case Op_LoadVectorMasked:
+    case Op_AddVI:
+    case Op_VectorLoadMask:
+      return UseRVV;
+    default:
+      return false;
+  }
 }
 
 const bool Matcher::vector_needs_partial_operations(Node* node, const TypeVect* vt) {
-  return false;
+  switch(node->Opcode()) {
+      case Op_VectorLoadMask:
+        return true;
+      default:
+        // For other ops whose vector size is smaller than the max vector size, a
+        // full-sized unpredicated operation does not impact the final vector result.
+        return false;
+    }
 }
 
 const RegMask* Matcher::predicate_reg_mask(void) {
-  return NULL;
+  return &_PR_REG_mask;
 }
 
 const TypeVectMask* Matcher::predicate_reg_type(const Type* elemTy, int length) {
-  return NULL;
+  return new TypeVectMask(elemTy, length);
 }
 
 // Vector calling convention not yet implemented.
@@ -3492,6 +3512,15 @@ operand vReg()
 %{
   constraint(ALLOC_IN_RC(vectora_reg));
   match(VecA);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand pRegGov()
+%{
+  constraint(ALLOC_IN_RC(pr_reg));
+  match(RegVectMask);
   op_cost(0);
   format %{ %}
   interface(REG_INTER);

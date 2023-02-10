@@ -84,7 +84,6 @@ source %{
       case Op_VectorCastL2X:
       case Op_VectorCastS2X:
       case Op_VectorInsert:
-      case Op_VectorLoadMask:
       case Op_VectorLoadShuffle:
       case Op_VectorMaskCmp:
       case Op_VectorRearrange:
@@ -132,6 +131,18 @@ instruct storeV(vReg src, vmemA mem, vReg tmp1, iRegINoSp tmp2) %{
     loadStore(C2_MacroAssembler(&cbuf), true, src_reg,
               Matcher::vector_element_basic_type(this, $src), as_Register($mem$$base),
               as_VectorRegister($tmp1$$reg), $tmp2$$Register, Matcher::vector_length_in_bytes(this, $src));
+  %}
+  ins_pipe(pipe_slow);
+%}
+
+instruct vloadmask(pRegGov dst, vReg src, rFlagsReg cr) %{
+  match(Set dst (VectorLoadMask src));
+  format %{ "vloadmask $dst, $src\t# KILL cr" %}
+  ins_encode %{
+    BasicType bt = Matcher::vector_element_basic_type(this, $src);
+    Assembler::SEW sew = Assembler::elemtype_to_sew(bt);
+    __ vsetvli(t0, x0, sew);
+    __ vmsne_vx(v0, as_VectorRegister($src$$reg), x0);
   %}
   ins_pipe(pipe_slow);
 %}
@@ -253,6 +264,21 @@ instruct vaddI(vReg dst, vReg src1, vReg src2) %{
     __ vadd_vv(as_VectorRegister($dst$$reg),
                as_VectorRegister($src1$$reg),
                as_VectorRegister($src2$$reg));
+  %}
+  ins_pipe(pipe_slow);
+%}
+
+instruct vaddI_masked(vReg dst_src1, vReg src2, pRegGov mask) %{
+  match(Set dst_src1 (AddVI (Binary dst_src1 src2) mask));
+  ins_cost(VEC_COST);
+  format %{ "vaddI_masked $dst_src1, $src2, $mask\t#@vaddI" %}
+  ins_encode %{
+    BasicType bt = Matcher::vector_element_basic_type(this);
+    Assembler::SEW sew = Assembler::elemtype_to_sew(bt);
+    __ vsetvli(t0, x0, sew);
+    __ vadd_vv(as_VectorRegister($dst_src1$$reg),
+               as_VectorRegister($dst_src1$$reg),
+               as_VectorRegister($src2$$reg), Assembler::v0_t);
   %}
   ins_pipe(pipe_slow);
 %}
