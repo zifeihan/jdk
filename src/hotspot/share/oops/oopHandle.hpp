@@ -28,6 +28,8 @@
 #include "metaprogramming/primitiveConversions.hpp"
 #include "oops/oopsHierarchy.hpp"
 
+#include <type_traits>
+
 class OopStorage;
 
 // Simple classes for wrapping oop and atomically accessed oop pointers
@@ -70,14 +72,13 @@ public:
 
   inline oop xchg(oop new_value);
 
-  // Used only for removing handle.
   oop* ptr_raw() const { return _obj; }
 };
 
 // Convert OopHandle to oop*
 
 template<>
-struct PrimitiveConversions::Translate<OopHandle> : public TrueType {
+struct PrimitiveConversions::Translate<OopHandle> : public std::true_type {
   typedef OopHandle Value;
   typedef oop* Decayed;
 
