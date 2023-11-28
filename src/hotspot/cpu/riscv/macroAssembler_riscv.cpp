@@ -4711,8 +4711,6 @@ void MacroAssembler::test_bit(Register Rd, Register Rs, uint32_t bit_pos) {
 }
 
 // Implements lightweight-locking.
-// Branches to slow upon failure to lock the object.
-// Falls through upon success.
 //
 //  - obj: the object to be locked
 //  - tmp1, tmp2, tmp3: temporary registers, will be destroyed
@@ -4737,7 +4735,7 @@ void MacroAssembler::lightweight_lock(Register obj, Register tmp1, Register tmp2
 
   // Check header for monitor (0b10).
   ld(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
-  test_bit(t, mark, exact_log2(markWord::monitor_value));
+  test_bit(t, mark, markWord::monitor_value);
   bnez(t, slow, /* is_far */ true);
 
   // Try to lock. Transition lock bits 0b00 => 0b01
@@ -4759,9 +4757,8 @@ void MacroAssembler::lightweight_lock(Register obj, Register tmp1, Register tmp2
 }
 
 // Implements ligthweight-unlocking.
-// Branches to slow upon failure.
-// Falls through upon success.
 //
+// - obj: the object to be unlocked
 // - tmp1, tmp2, tmp3: temporary registers
 void MacroAssembler::lightweight_unlock(Register obj, Register tmp1, Register tmp2, Register tmp3, Label& slow) {
   assert(LockingMode == LM_LIGHTWEIGHT, "only used with new lightweight locking");
@@ -4769,10 +4766,6 @@ void MacroAssembler::lightweight_unlock(Register obj, Register tmp1, Register tm
 
 #ifdef ASSERT
   {
-    // The following checks rely on the fact that LockStack is only ever modified by
-    // its owning thread, even if the lock got inflated concurrently; removal of LockStack
-    // entries after inflation will happen delayed in that case.
-
     // Check for lock-stack underflow.
     Label stack_ok;
     lwu(tmp1, Address(xthread, JavaThread::lock_stack_top_offset()));

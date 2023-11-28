@@ -32,7 +32,7 @@
 #include "opto/output.hpp"
 #include "opto/subnode.hpp"
 #include "runtime/stubRoutines.hpp"
-#include "utilities/macros.hpp"
+#include "utilities/globalDefinitions.hpp"
 
 #ifdef PRODUCT
 #define BLOCK_COMMENT(str) /* nothing */
@@ -56,6 +56,7 @@ void C2_MacroAssembler::fast_lock(Register objectReg, Register boxReg,
   Label object_has_monitor;
   Label count, no_count;
 
+  assert(LockingMode != LM_LIGHTWEIGHT, "uses fast_lock_lightweight");
   assert_different_registers(oop, box, tmp, disp_hdr, flag, tmp3Reg, t0);
 
   // Load markWord from object into displaced_header.
@@ -158,6 +159,7 @@ void C2_MacroAssembler::fast_unlock(Register objectReg, Register boxReg,
   Label object_has_monitor;
   Label count, no_count;
 
+  assert(LockingMode != LM_LIGHTWEIGHT, "uses fast_unlock_lightweight");
   assert_different_registers(oop, box, tmp, disp_hdr, flag, t0);
 
   if (LockingMode == LM_LEGACY) {
@@ -228,10 +230,10 @@ void C2_MacroAssembler::fast_unlock(Register objectReg, Register boxReg,
   bind(no_count);
 }
 
-void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Register tmp1, Register tmp2) {
+void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Register tmp1, Register tmp2, Register tmp3) {
   assert(LockingMode == LM_LIGHTWEIGHT, "must be");
   // TODO: Current implementation uses box only as a TEMP, consider renaming.
-  assert_different_registers(obj, box, tmp1, tmp2);
+  assert_different_registers(obj, box, tmp1, tmp2, t0);
 
   // Flag register, zero for success; non-zero for failure.
   Register flag = t1;
@@ -250,7 +252,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
   }
 
   const Register mark = tmp1;
-  const Register t = box;
+  const Register t = tmp3;
 
   { // Lightweight locking
 
@@ -270,18 +272,32 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
     ld(t, Address(t, -oopSize));
     beq(obj, t, push);
 
-    // Check for monitor (0b10).
+    // Relaxed normal load to check for monitor. Optimization for monitor case.
     ld(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
     test_bit(t, mark, exact_log2(markWord::monitor_value));
     bnez(t, inflated, /* is_far */ true);
 
-    // Not inflated.
-
-    // Try to lock. Transition lock bits 0b00 => 0b01
+    // Not inflated
     assert(oopDesc::mark_offset_in_bytes() == 0, "required to avoid a lea");
-    ori(mark, mark, markWord::unlocked_value);
-    xori(t, mark, markWord::unlocked_value);
-    cmpxchgptr(mark, t, obj, flag, push, &slow_path_set_flag);
+    // Load-Acquire Exclusive Register to match Store Exclusive Register below.
+    // Acquire to satisfy the JMM.
+    lr_d(mark, obj, Assembler::aqrl);
+
+    // Recheck for monitor (0b10).
+    test_bit(t, mark, exact_log2(markWord::monitor_value));
+    bnez(t, inflated, /* is_far */ true);
+
+    // Check that obj is unlocked (0b01).
+    ori(t, mark, markWord::unlocked_value);
+    bne(t, mark, slow_path_set_flag, /* is_far */ true);
+
+    // Clear unlock bit (0b01 => 0b00).
+    andi(mark, mark, ~markWord::unlocked_value);
+
+    // Try to lock. Transition lock-bits 0b01 => 0b00
+    // If the store conditional succeeds, result will be zero
+    sc_d(t, mark, obj, Assembler::rl);
+    bnez(t, slow_path_set_flag, /* is_far */ true);
 
     bind(push);
     // After successful lock, push object on lock-stack.
@@ -309,7 +325,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
     beqz(flag, locked);
 
     // Check if recursive.
-    bne(flag, xthread, slow_path);
+    bne(flag, xthread, slow_path_set_flag);
 
     // Recursive.
     mv(flag, zr);
@@ -322,7 +338,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
 #ifdef ASSERT
   // Check that locked label is reached with flags == 0.
   Label flag_correct;
-  bnez(flag, flag_correct);
+  beqz(flag, flag_correct);
   stop("Fast Lock Flag != 0");
 #endif
   Label end;
@@ -332,7 +348,7 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
   bind(slow_path);
 #ifdef ASSERT
   // Check that slow_path label is reached with flags != 0.
-  beqz(flag, flag_correct);
+  bnez(flag, flag_correct);
   stop("Fast Lock Flag == 0");
   bind(flag_correct);
 #endif
@@ -344,7 +360,7 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register box, Regi
                                                 Register tmp2) {
   assert(LockingMode == LM_LIGHTWEIGHT, "must be");
   // TODO: Current implementation uses box only as a TEMP, consider renaming.
-  assert_different_registers(obj, box, tmp1, tmp2);
+  assert_different_registers(obj, box, tmp1, tmp2, t0);
 
   // Flag register, zero for success; non-zero for failure.
   Register flag = t1;
@@ -356,10 +372,10 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register box, Regi
   Label slow_path;
 
   const Register mark = box;
+  const Register top = tmp1;
   const Register t = tmp2;
 
   { // Lightweight unlock
-    const Register top = tmp1;
 
     // Check if obj is top of lock-stack.
     lwu(top, Address(xthread, JavaThread::lock_stack_top_offset()));
@@ -380,39 +396,54 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register box, Regi
     beq(obj, t, unlocked_set_flag, /* is_far */ true);
 
     // Not recursive.
+    assert(oopDesc::mark_offset_in_bytes() == 0, "required to avoid a lea");
+    // Load Exclusive Register to match Store-Release Exclusive Register below.
+    lr_d(mark, obj, Assembler::aqrl);
 
-    // Check for monitor (0b10).
-    ld(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
+    // Check header for monitor (0b10).
     test_bit(t, mark, exact_log2(markWord::monitor_value));
     bnez(t, inflated, /* is_far */ true);
 
     // Try to unlock. Transition lock bits 0b00 => 0b01
-    assert(oopDesc::mark_offset_in_bytes() == 0, "required to avoid a lea");
-    // Use flag register to give it a !0 value.
-    ori(flag, mark, markWord::unlocked_value);
-    cmpxchgptr(mark, flag, obj, t, unlocked_set_flag, nullptr);
-
+    ori(t, mark, markWord::unlocked_value);
+    // Release to satisfy the JMM.
+    // If the store conditional succeeds, result will be zero
+    sc_d(flag, t, obj, Assembler::rl);
+    beqz(flag, unlocked, /* is_far */ true);
+    
+    // Load link store conditional exclusive failed.
     // Restore lock-stack and handle the unlock in runtime.
     DEBUG_ONLY(add(t, xthread, top);)
     DEBUG_ONLY(sd(obj, Address(t));)
     // Use flag register to give it a !0 value.
-    addw(flag, top, oopSize);
-    sw(flag, Address(xthread, JavaThread::lock_stack_top_offset()));
+    addw(top, top, oopSize);
+    sw(top, Address(xthread, JavaThread::lock_stack_top_offset()));
+    mv(flag, top);
     j(slow_path);
   }
-
 
   { // Handle inflated monitor.
     bind(inflated_load_monitor);
     ld(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
 #ifdef ASSERT
-    // TODO: Check lock-stack does not contain obj.
     test_bit(t, mark, exact_log2(markWord::monitor_value));
     bnez(t, inflated, /* is_far */ true);
     stop("Fast Unlock not monitor");
 #endif
 
     bind(inflated);
+
+#ifdef ASSERT
+    Label check_done;
+    subw(top, top, oopSize);
+    mv(t, in_bytes(JavaThread::lock_stack_base_offset()));
+    blt(top, t, check_done, /* is_far */ true);
+    add(t, xthread, top);
+    ld(t, Address(t));
+    bne(obj, t, inflated, /* is_far */ true);
+    stop("Fast Unlock lock on stack");
+    bind(check_done);
+#endif
 
     // mark contains the tagged ObjectMonitor*.
     const Register monitor = mark;
@@ -469,13 +500,13 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register box, Regi
 #ifdef ASSERT
   // Check that unlocked label is reached with flags == 0.
   Label flag_correct;
-  bnez(flag, flag_correct);
+  beqz(flag, flag_correct);
   stop("Fast Lock Flag != 0");
 #endif
   bind(slow_path);
 #ifdef ASSERT
   // Check that slow_path label is reached with flags != 0.
-  beqz(flag, flag_correct);
+  bnez(flag, flag_correct);
   stop("Fast Lock Flag == 0");
   bind(flag_correct);
 #endif
