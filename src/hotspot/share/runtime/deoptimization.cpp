@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1603,6 +1603,10 @@ void Deoptimization::reassign_fields(frame* fr, RegisterMap* reg_map, GrowableAr
       reassign_object_array_elements(fr, reg_map, sv, (objArrayOop) obj());
     }
   }
+  // These objects may escape when we return to Interpreter after deoptimization.
+  // We need barrier so that stores that initialize these objects can't be reordered
+  // with subsequent stores that make these objects accessible by other threads.
+  OrderAccess::storestore();
 }
 
 
@@ -2442,6 +2446,17 @@ JRT_ENTRY(void, Deoptimization::uncommon_trap_inner(JavaThread* current, jint tr
     if (make_not_compilable && !nm->method()->is_not_compilable(CompLevel_full_optimization)) {
       assert(make_not_entrant, "consistent");
       nm->method()->set_not_compilable("give up compiling", CompLevel_full_optimization);
+    }
+
+    if (ProfileExceptionHandlers && trap_mdo != nullptr) {
+      BitData* exception_handler_data = trap_mdo->exception_handler_bci_to_data_or_null(trap_bci);
+      if (exception_handler_data != nullptr) {
+        // uncommon trap at the start of an exception handler.
+        // C2 generates these for un-entered exception handlers.
+        // mark the handler as entered to avoid generating
+        // another uncommon trap the next time the handler is compiled
+        exception_handler_data->set_exception_handler_entered();
+      }
     }
 
   } // Free marked resources
