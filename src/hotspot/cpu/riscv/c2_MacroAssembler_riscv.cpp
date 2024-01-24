@@ -279,25 +279,14 @@ void C2_MacroAssembler::fast_lock_lightweight(Register obj, Register box, Regist
 
     // Not inflated
     assert(oopDesc::mark_offset_in_bytes() == 0, "required to avoid a lea");
-    // Load-Acquire Exclusive Register to match Store Exclusive Register below.
-    // Acquire to satisfy the JMM.
-    lr_d(mark, obj, Assembler::aqrl);
-
-    // Recheck for monitor (0b10).
-    test_bit(t, mark, exact_log2(markWord::monitor_value));
-    bnez(t, inflated, /* is_far */ true);
-
-    // Check that obj is unlocked (0b01).
-    ori(t, mark, markWord::unlocked_value);
-    bne(t, mark, slow_path_set_flag, /* is_far */ true);
-
-    // Clear unlock bit (0b01 => 0b00).
-    andi(mark, mark, ~markWord::unlocked_value);
 
     // Try to lock. Transition lock-bits 0b01 => 0b00
-    // If the store conditional succeeds, result will be zero
-    sc_d(t, mark, obj, Assembler::rl);
-    bnez(t, slow_path_set_flag, /* is_far */ true);
+    ori(mark, mark, markWord::unlocked_value);
+    xori(t, mark, markWord::unlocked_value);
+    // Acquire to satisfy the JMM.
+    cmpxchg(/*memory address*/obj, /*expected value*/mark, /*new value*/t, Assembler::int64, 
+            /* acquire */Assembler::aq, /* release */Assembler::relaxed, /*result*/t);
+    bne(mark, t, slow_path_set_flag);
 
     bind(push);
     // After successful lock, push object on lock-stack.
@@ -396,20 +385,20 @@ void C2_MacroAssembler::fast_unlock_lightweight(Register obj, Register box, Regi
     beq(obj, t, unlocked_set_flag, /* is_far */ true);
 
     // Not recursive.
-    assert(oopDesc::mark_offset_in_bytes() == 0, "required to avoid a lea");
-    // Load Exclusive Register to match Store-Release Exclusive Register below.
-    lr_d(mark, obj, Assembler::aqrl);
+    // Load Mark.
+    ld(mark, Address(obj, oopDesc::mark_offset_in_bytes()));
 
     // Check header for monitor (0b10).
     test_bit(t, mark, exact_log2(markWord::monitor_value));
     bnez(t, inflated, /* is_far */ true);
 
     // Try to unlock. Transition lock bits 0b00 => 0b01
+    assert(oopDesc::mark_offset_in_bytes() == 0, "required to avoid lea");
     ori(t, mark, markWord::unlocked_value);
     // Release to satisfy the JMM.
-    // If the store conditional succeeds, result will be zero
-    sc_d(flag, t, obj, Assembler::rl);
-    beqz(flag, unlocked, /* is_far */ true);
+    cmpxchg(/*memory address*/obj, /*expected value*/mark, /*new value*/t, Assembler::int64, 
+            /* acquire */Assembler::relaxed, /* release */Assembler::rl, /*result*/t);
+    beq(mark, t, unlocked_set_flag);
     
     // Load link store conditional exclusive failed.
     // Restore lock-stack and handle the unlock in runtime.
