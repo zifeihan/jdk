@@ -1215,7 +1215,7 @@ int MachCallStaticJavaNode::ret_addr_offset() const
 
 int MachCallDynamicJavaNode::ret_addr_offset() const
 {
-  return MacroAssembler::movptr_instruction_size() + (3 * NativeInstruction::instruction_size); // movptr, auipc + ld + jal
+  return MacroAssembler::movptr_instruction_size(/* use_temp */ true) + (3 * NativeInstruction::instruction_size); // movptr, auipc + ld + jal
 }
 
 int MachCallRuntimeNode::ret_addr_offset() const {
@@ -1235,7 +1235,7 @@ int MachCallRuntimeNode::ret_addr_offset() const {
     return 1 * NativeInstruction::instruction_size;
   } else {
     // movptr_instruction_size() includes the trailing jalr
-    return 3 * NativeInstruction::instruction_size + MacroAssembler::movptr_instruction_size();
+    return 3 * NativeInstruction::instruction_size + MacroAssembler::movptr_instruction_size(/* use_temp */ true);
   }
 }
 
@@ -1261,7 +1261,7 @@ int CallDynamicJavaDirectNode::compute_padding(int current_offset) const
   // lui, lui, slli, add, addi (sv39: lui, addi, slli, addi)
   // Though movptr() has already 4-byte aligned with or without RVC,
   // We need to prevent from further changes by explicitly calculating the size.
-  current_offset += MacroAssembler::movptr_instruction_size();
+  current_offset += MacroAssembler::movptr_instruction_size(/* use_temp */ true);
   // to make sure the address of jal 4-byte aligned.
   return align_up(current_offset, alignment_required()) - current_offset;
 }

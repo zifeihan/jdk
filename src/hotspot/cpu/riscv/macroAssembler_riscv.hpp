@@ -955,7 +955,7 @@ public:
   void movptr(Register Rd, address addr, Register tmp = noreg);
   void movptr(Register Rd, address addr, int32_t &offset, Register tmp = noreg);
 
-  static int movptr_instruction_size();
+  static int movptr_instruction_size(bool use_temp);
 
  private:
   void movptr_for_mode(Register Rd, uintptr_t addr, int32_t &offset, Register tmp);

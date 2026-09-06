@@ -259,7 +259,7 @@ public:
   };
 
   static int insn_size() {
-    return MacroAssembler::movptr_instruction_size();
+    return MacroAssembler::movptr_instruction_size(/* use_temp */ true);
   }
 
   address jump_destination() const;

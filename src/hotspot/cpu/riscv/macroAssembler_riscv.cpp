@@ -3191,13 +3191,16 @@ void MacroAssembler::movptr_for_mode(Register Rd, uint64_t addr, int32_t &offset
   }
 }
 
-int MacroAssembler::movptr_instruction_size() {
+int MacroAssembler::movptr_instruction_size(bool use_temp) {
   switch (VM_Version::satp_mode.value()) {
     case VM_Version::VM_SV39:
       return movptr_sv39_instruction_size;
     case VM_Version::VM_SV48:
-      return movptr2_sv48_instruction_size;
-    default: ShouldNotReachHere(); return 0;
+      return use_temp ? movptr2_sv48_instruction_size
+                      : movptr1_sv48_instruction_size;
+    default:
+      ShouldNotReachHere();
+      return 0;
   }
 }
 
@@ -5823,15 +5826,8 @@ int MacroAssembler::max_reloc_call_address_stub_size() {
 }
 
 int MacroAssembler::static_call_stub_size() {
-  switch (VM_Version::satp_mode.value()) {
-    case VM_Version::VM_SV39:
-      return 2 * movptr_sv39_instruction_size;
-    case VM_Version::VM_SV48:
-      return movptr1_sv48_instruction_size + movptr2_sv48_instruction_size;
-    default:
-      ShouldNotReachHere();
-      return 0;
-  }
+  return movptr_instruction_size(/* use_temp */ false) +
+         movptr_instruction_size(/* use_temp */ true);
 }
 
 Address MacroAssembler::add_memory_helper(const Address dst, Register tmp) {
