@@ -523,9 +523,9 @@ private:
 
   // Native AtomicAccess dispatches on this instead of UseZalasr. UseZalasr is
   // set from command-line and extension detection before VM_Version::initialize()
-  // runs the toolchain-psABI and UseZtso mutual-exclusion checks, so during
-  // startup UseZalasr may be transiently true even on configurations where those
-  // checks would later disable it. AtomicAccess is invoked from os::init_2,
+  // runs the toolchain-psABI check, so during startup UseZalasr may be transiently
+  // true even on configurations where that check will later disable it.
+  // AtomicAccess is invoked from os::init_2,
   // vm_init_globals, ObjectSynchronizer::initialize and other subsystems that
   // run before init_globals() calls VM_Version_init(), so dispatching on
   // UseZalasr directly can either SIGILL (CPU lacks the extension) or emit
