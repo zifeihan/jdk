@@ -25,9 +25,11 @@
 
 #include "asm/assembler.hpp"
 #include "asm/assembler.inline.hpp"
+#include "code/codeBlob.hpp"
 #include "opto/c2_MacroAssembler.hpp"
 #include "opto/compile.hpp"
 #include "opto/intrinsicnode.hpp"
+#include "opto/machnode.hpp"
 #include "opto/output.hpp"
 #include "opto/subnode.hpp"
 #include "runtime/objectMonitorTable.hpp"
@@ -3230,7 +3232,9 @@ bool C2_MacroAssembler::in_scratch_emit_size() {
 
 void C2_MacroAssembler::reduce_integral_v(Register dst, Register src1,
                                           VectorRegister src2, VectorRegister tmp,
-                                          int opc, VectorMask vm) {
+                                          int opc, BasicType bt, uint vector_length, VectorMask vm) {
+  assert(bt == T_BYTE || bt == T_SHORT || bt == T_INT || bt == T_LONG, "unsupported element type");
+  vsetvli_helper(bt, vector_length);
   vmv_s_x(tmp, src1);
   switch (opc) {
     case Op_AddReductionVI:
@@ -3305,8 +3309,38 @@ void C2_MacroAssembler::reduce_mul_integral_v(Register dst, Register src1, Vecto
 
 // Set vl and vtype for full and partial vector operations.
 // (vma = mu, vta = tu, vill = false)
+//
+// All instruct encodings retain their ordinary configuration requests. Only
+// this helper decides whether a request can reuse an earlier setup. Scratch
+// sizing always emits the setup, providing an upper bound for branch shortening.
 void C2_MacroAssembler::vsetvli_helper(BasicType bt, uint vector_length, LMUL vlmul, Register tmp) {
   Assembler::SEW sew = Assembler::elemtype_to_sew(bt);
+  const bool tracking = _rvv_node != nullptr && code_section() == code()->insts() && !in_scratch_emit_size();
+  if (tracking) {
+    if (!_rvv_node_checked) {
+      // An encoding can hide branches, local labels, dynamic VL changes, and
+      // calls. Examine its complete scratch emission before skipping anything;
+      // inspecting only the already-emitted prefix would miss incoming edges
+      // to labels later in the encoding. This is independent of the AD rule.
+      PhaseOutput* output = Compile::current()->output();
+      uint size = output->scratch_emit_size(_rvv_node);
+      address begin = output->scratch_buffer_blob()->content_begin();
+      _rvv_node_straight_line = rvv_straight_line(begin, begin + size);
+      _rvv_node_checked = true;
+      if (!_rvv_node_straight_line) {
+        _rvv_valid = false;
+      }
+    }
+    if (_rvv_node_straight_line) {
+      rvv_scan_configuration();
+      // tmp is scratch, not an output of this helper. In particular, do not
+      // apply this transformation to raw vsetvli instructions whose rd is used.
+      if (_rvv_valid && _rvv_sew == sew && _rvv_lmul == vlmul && _rvv_vl == (int)vector_length) {
+        block_comment("RVV configuration reused");
+        return;
+      }
+    }
+  }
   if (vector_length <= 31) {
     vsetivli(tmp, vector_length, sew, vlmul);
   } else if (vector_length == (MaxVectorSize / type2aelembytes(bt))) {
@@ -3314,6 +3348,125 @@ void C2_MacroAssembler::vsetvli_helper(BasicType bt, uint vector_length, LMUL vl
   } else {
     mv(tmp, vector_length);
     vsetvli(tmp, tmp, sew, vlmul);
+  }
+  if (tracking && _rvv_node_straight_line) {
+    _rvv_valid = true;
+    _rvv_sew = sew;
+    _rvv_lmul = vlmul;
+    _rvv_vl = vector_length;
+    _rvv_scan_offset = offset();
+  }
+}
+
+// Accept only ordinary scalar and vector instructions with no hidden control
+// flow. Unknown opcodes, system instructions and fault-only-first vector loads
+// are boundaries. Compressed jumps/branches/jalr/ebreak are boundaries too.
+bool C2_MacroAssembler::rvv_straight_line(address begin, address end) {
+  for (address p = begin; p < end;) {
+    if (end - p < 2) {
+      return false;
+    }
+    uint16_t half = get_native_u2(p);
+    if ((half & 3) != 3) {
+      uint quadrant = half & 3;
+      uint funct3 = half >> 13;
+      if ((quadrant == 0 && funct3 == 4) ||
+          (quadrant == 1 && funct3 >= 5) ||
+          (quadrant == 2 && funct3 == 4)) {
+        return false;
+      }
+      p += 2;
+      continue;
+    }
+    if (end - p < 4 || (half & 0x1f) == 0x1f) {
+      return false;
+    }
+    uint32_t insn = get_native_u4(p);
+    switch (insn & 0x7f) {
+      case 0x03: // integer loads
+      case 0x0f: // fences
+      case 0x13: // OP-IMM
+      case 0x17: // AUIPC
+      case 0x1b: // OP-IMM-32
+      case 0x23: // integer stores
+      case 0x27: // floating-point and vector stores
+      case 0x2f: // AMO
+      case 0x33: // OP
+      case 0x37: // LUI
+      case 0x3b: // OP-32
+      case 0x43: // floating-point fused operations
+      case 0x47:
+      case 0x4b:
+      case 0x4f:
+      case 0x53: // OP-FP
+      case 0x57: // OP-V (configuration instructions handled by the scan below)
+        break;
+      case 0x07: { // floating-point and vector loads
+        uint width = (insn >> 12) & 7;
+        if (width != 2 && width != 3 && ((insn >> 20) & 0x1f) == 0x10) {
+          return false; // fault-only-first loads can change VL
+        }
+        break;
+      }
+      default:
+        return false;
+    }
+    p += 4;
+  }
+  return true;
+}
+
+void C2_MacroAssembler::rvv_scan_configuration() {
+  address begin = code()->insts()->start() + _rvv_scan_offset;
+  address end = pc();
+  if (!rvv_straight_line(begin, end)) {
+    _rvv_valid = false;
+  } else {
+    for (address p = begin; p < end;) {
+      uint16_t half = get_native_u2(p);
+      if ((half & 3) != 3) {
+        p += 2;
+      } else {
+        uint32_t insn = get_native_u4(p);
+        if ((insn & 0x707f) == 0x7057) {
+          _rvv_valid = false; // a raw vsetvli/vsetivli/vsetvl bypassed the helper
+        }
+        p += 4;
+      }
+    }
+  }
+  _rvv_scan_offset = offset();
+}
+
+void C2_MacroAssembler::rvv_begin_node(const Node* node, const Block* block) {
+  Compile* C = Compile::current();
+  if (!VSETVLIElimination || !UseRVV || C->max_vector_size() == 0 || C->has_unsafe_access()) {
+    return;
+  }
+  if (_rvv_block != block ||
+      (node->is_Mach() && (node->as_Mach()->has_call() ||
+                          node->is_MachSafePoint() || node->as_Mach()->barrier_data() != 0))) {
+    _rvv_valid = false;
+  }
+  _rvv_block = block;
+  _rvv_node = node;
+  _rvv_node_start = offset();
+  _rvv_scan_offset = offset();
+  _rvv_node_checked = false;
+  _rvv_node_straight_line = false;
+}
+
+void C2_MacroAssembler::rvv_end_node() {
+  if (_rvv_node != nullptr) {
+    assert(!_rvv_node_straight_line ||
+           rvv_straight_line(code()->insts()->start() + _rvv_node_start, pc()),
+           "scratch and actual emissions disagree about RVV reuse safety");
+    if (_rvv_node_checked && !_rvv_node_straight_line) {
+      _rvv_valid = false;
+    } else if (_rvv_valid) {
+      rvv_scan_configuration();
+    }
+    _rvv_node = nullptr;
   }
 }
 

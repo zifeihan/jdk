@@ -29,6 +29,23 @@
 // C2_MacroAssembler contains high-level macros for C2
 
  private:
+  friend class RVVConfigurationTestAccess;
+  // Configuration reuse is confined to straight-line emissions in one C2
+  // basic block. Offsets, rather than addresses, survive CodeBuffer expansion.
+  const Block* _rvv_block = nullptr;
+  const Node* _rvv_node = nullptr;
+  int _rvv_node_start = 0;
+  int _rvv_scan_offset = 0;
+  int _rvv_vl = 0;
+  SEW _rvv_sew = e8;
+  LMUL _rvv_lmul = m1;
+  bool _rvv_valid = false;
+  bool _rvv_node_checked = false;
+  bool _rvv_node_straight_line = false;
+
+  static bool rvv_straight_line(address begin, address end);
+  void rvv_scan_configuration();
+
   // Return true if the phase output is in the scratch emit size mode.
   virtual bool in_scratch_emit_size() override;
 
@@ -49,6 +66,9 @@
                                   const int STUB_THRESHOLD, Label *STUB, Label *DONE);
 
  public:
+  void rvv_begin_node(const Node* node, const Block* block);
+  void rvv_end_node();
+
   void entry_barrier();
 
   // Code used by cmpFastLock and cmpFastUnlock mach instructions in .ad file.
@@ -282,13 +302,15 @@
                        bool is_double, uint vector_length);
 
   void reduce_integral_v(Register dst, Register src1,
-                         VectorRegister src2, VectorRegister tmp,
-                         int opc, VectorMask vm = Assembler::unmasked);
+                        VectorRegister src2, VectorRegister tmp,
+                        int opc, BasicType bt, uint vector_length,
+                        VectorMask vm = Assembler::unmasked);
 
   void reduce_mul_integral_v(Register dst, Register src1, VectorRegister src2,
                              VectorRegister vtmp1, VectorRegister vtmp2, BasicType bt,
                              uint vector_length, VectorMask vm = Assembler::unmasked);
 
+  // tmp is scratch; callers must not rely on it containing the resulting VL.
   void vsetvli_helper(BasicType bt, uint vector_length, LMUL vlmul = Assembler::m1, Register tmp = t0);
 
   void compare_integral_v(VectorRegister dst, VectorRegister src1, VectorRegister src2, int cond,

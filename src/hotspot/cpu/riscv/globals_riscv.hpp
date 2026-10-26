@@ -103,7 +103,7 @@ define_pd_global(bool, ValueTypeReturnedAsFields, false);
   product(bool, UseRVC, false, DIAGNOSTIC, "Use RVC instructions")               \
   product(bool, UseRVV, false, DIAGNOSTIC, "Use RVV instructions")               \
   product(bool, VSETVLIElimination, true, DIAGNOSTIC,                            \
-          "Eliminate redundant RVV vector configuration within C2 extended "     \
+          "Eliminate redundant RVV vector configuration within C2 "              \
           "basic blocks")                                                        \
   product(bool, UseZba, false, DIAGNOSTIC, "Use Zba instructions")               \
   product(bool, UseZbb, false, DIAGNOSTIC, "Use Zbb instructions")               \

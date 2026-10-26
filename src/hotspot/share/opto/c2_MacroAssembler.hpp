@@ -30,7 +30,9 @@
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/macros.hpp"
 
+class Block;
 class C2EntryBarrierStub;
+class Node;
 class TypeInt;
 class TypeLong;
 

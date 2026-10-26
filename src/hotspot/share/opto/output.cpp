@@ -1762,7 +1762,9 @@ void PhaseOutput::fill_buffer(C2_MacroAssembler* masm, uint* blk_starts) {
 
       // "Normal" instruction case
       DEBUG_ONLY(uint instr_offset = masm->offset());
+      RISCV_ONLY(masm->rvv_begin_node(n, block);)
       n->emit(masm, C->regalloc());
+      RISCV_ONLY(masm->rvv_end_node();)
       current_offset = masm->offset();
 
       // Above we only verified that there is enough space in the instruction section.

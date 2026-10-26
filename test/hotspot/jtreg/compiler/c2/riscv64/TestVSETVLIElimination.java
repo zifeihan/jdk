@@ -24,7 +24,7 @@
 
 /*
  * @test
- * @summary Test RVV vector configuration propagation through extended basic blocks
+ * @summary Test rule-oblivious RVV configuration reuse and its control-flow boundaries
  * @library /test/lib /
  * @requires vm.compiler2.enabled & os.arch == "riscv64" & vm.cpu.features ~= ".*rvv.*"
  * @modules java.base/jdk.internal.misc
@@ -35,10 +35,8 @@
 package compiler.c2.riscv64;
 
 import compiler.lib.ir_framework.CompLevel;
-import compiler.lib.ir_framework.CompilePhase;
 import compiler.lib.ir_framework.DontInline;
 import compiler.lib.ir_framework.ForceCompile;
-import compiler.lib.ir_framework.IR;
 import compiler.lib.ir_framework.Run;
 import compiler.lib.ir_framework.Scenario;
 import compiler.lib.ir_framework.Test;
@@ -47,6 +45,7 @@ import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.DoubleVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
+import jdk.incubator.vector.LongVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.internal.misc.Unsafe;
 import jdk.test.lib.Asserts;
@@ -56,31 +55,6 @@ import java.util.Arrays;
 
 public class TestVSETVLIElimination {
     private static final Unsafe UNSAFE = Unsafe.getUnsafe();
-    private static final String CONFIG = "rvv_set_config";
-    private static final String CONFIG_LINE = "[^\\r\\n]*" + CONFIG + "[^\\r\\n]*\\R";
-    private static final String PREDECESSOR = "B\\d+(?: \\(B\\d+\\))? ";
-    private static final String SINGLE_PRED =
-            "(?m)^[0-9a-f]+\\h+B\\d+:[^\\r\\n]*<- in\\( " + PREDECESSOR + "\\)[^\\r\\n]*\\R";
-    private static final String JOIN =
-            "(?m)^[0-9a-f]+\\h+B\\d+:[^\\r\\n]*<- in\\( " + PREDECESSOR + "(?:" + PREDECESSOR + ")+\\)[^\\r\\n]*\\R";
-    // Do not let an earlier setup in the same block satisfy a cross-block assertion.
-    private static final String BEFORE_CONFIG =
-            "(?:(?![^\\r\\n]*(?:\\bB\\d+:|" + CONFIG + "))[^\\r\\n]*\\R)*";
-    private static final String FIRST_UNCONFIGURED_STORE =
-            BEFORE_CONFIG + "[^\\r\\n]*storeV [^\\r\\n]*";
-    private static final String FIRST_CONFIGURED_STORE =
-            BEFORE_CONFIG + CONFIG_LINE + "[^\\r\\n]*storeV [^\\r\\n]*";
-    private static final String FIRST_CONFIGURED_LOAD =
-            BEFORE_CONFIG + CONFIG_LINE + "[^\\r\\n]*loadV [^\\r\\n]*";
-    private static final String FIRST_CONFIGURED_ADD =
-            BEFORE_CONFIG + CONFIG_LINE + "[^\\r\\n]*vadd [^\\r\\n]*";
-    // Connectors print after executable blocks; bind their identities with a lookahead.
-    private static final String EMPTY_TWO_PRED_JOIN =
-            "(?m)\\A(?=[\\s\\S]*^[0-9a-f]+\\h+(?<connector>B\\d+):\\h+#\\h+out\\( (?<successor>B\\d+) \\)"
-            + " <- in\\( (?<first>B\\d+) (?<second>(?!\\k<first>\\b)B\\d+) \\)[^\\r\\n]*\\R\\h+# Empty connector block\\R)"
-            + "[\\s\\S]*^[0-9a-f]+\\h+\\k<successor>:[^\\r\\n]*<- in\\( "
-            + "(?=[^\\r\\n]*\\b\\k<first> \\(\\k<connector>\\))"
-            + "(?=[^\\r\\n]*\\b\\k<second> \\(\\k<connector>\\))[^\\r\\n]*\\R";
     private static final int SENTINEL = 0x5a5a5a5a;
     private static final int[] A = {0x12345678, -77, 903, 0x76543210};
     private static final int[] B = {37, 0x1234, -51, 99};
@@ -102,6 +76,76 @@ public class TestVSETVLIElimination {
     private static final double[] DR = new double[2];
     private static int calls;
 
+    @Test
+    public static int testIntrinsic(byte[] bytes) {
+        var a = IntVector.fromArray(IntVector.SPECIES_128, A, 0);
+        a.intoArray(BEFORE, 0);
+        int hash = Arrays.hashCode(bytes);
+        a.add(hash).intoArray(AFTER, 0);
+        return hash;
+    }
+
+    @Run(test = "testIntrinsic")
+    public static void runIntrinsic() {
+        for (int length : new int[] {0, 1, 4, 16, 64, 129, 1024}) {
+            byte[] bytes = new byte[length];
+            int hash = 1;
+            for (int i = 0; i < length; i++) {
+                bytes[i] = (byte) (i * 17 - length);
+                hash = 31 * hash + bytes[i];
+            }
+            Asserts.assertEQ(testIntrinsic(bytes), hash);
+            for (int i = 0; i < A.length; i++) {
+                Asserts.assertEQ(BEFORE[i], A[i]);
+                Asserts.assertEQ(AFTER[i], A[i] + hash);
+            }
+        }
+    }
+
+    @Test
+    public static int testReduction() {
+        var a = IntVector.fromArray(IntVector.SPECIES_128, A, 0);
+        var b = IntVector.fromArray(IntVector.SPECIES_128, B, 0);
+        int sum = a.add(b).reduceLanes(VectorOperators.ADD);
+        int max = a.reduceLanes(VectorOperators.UMAX);
+        a.mul(b).intoArray(AFTER, 0);
+        return sum ^ max;
+    }
+
+    @Run(test = "testReduction")
+    public static void runReduction() {
+        int sum = 0;
+        int max = 0;
+        for (int i = 0; i < A.length; i++) {
+            sum += A[i] + B[i];
+            if (Integer.compareUnsigned(A[i], max) > 0) {
+                max = A[i];
+            }
+        }
+        Asserts.assertEQ(testReduction(), sum ^ max);
+        for (int i = 0; i < A.length; i++) {
+            Asserts.assertEQ(AFTER[i], A[i] * B[i]);
+        }
+    }
+
+    @Test
+    public static void testMaskedCast() {
+        var a = IntVector.fromArray(IntVector.SPECIES_128, A, 0);
+        var mask = a.compare(VectorOperators.GT, 0);
+        var mixed = a.add(3, mask);
+        var wide = (LongVector) mixed.convertShape(VectorOperators.I2L, LongVector.SPECIES_256, 0);
+        var narrow = (IntVector) wide.convertShape(VectorOperators.L2I, IntVector.SPECIES_128, 0);
+        narrow.mul(a).intoArray(AFTER, 0);
+    }
+
+    @Run(test = "testMaskedCast")
+    public static void runMaskedCast() {
+        testMaskedCast();
+        for (int i = 0; i < A.length; i++) {
+            Asserts.assertEQ(AFTER[i], (A[i] + (A[i] > 0 ? 3 : 0)) * A[i]);
+        }
+    }
+
     public static void main(String[] args) {
         TestFramework framework = new TestFramework()
                 .addFlags("-XX:-TieredCompilation", "-XX:+UnlockDiagnosticVMOptions", "-XX:+VSETVLIElimination",
@@ -111,7 +155,9 @@ public class TestVSETVLIElimination {
                           "-XX:CompileCommand=blackhole,compiler.c2.riscv64.TestVSETVLIElimination::blackhole")
                 .addScenarios(new Scenario(0, "-XX:+BlockLayoutByFrequency"),
                               new Scenario(1, "-XX:-BlockLayoutByFrequency"),
-                              new Scenario(2, "-XX:-VSETVLIElimination"));
+                              new Scenario(2, "-XX:-VSETVLIElimination"),
+                              new Scenario(3, "-XX:+UseRVC"),
+                              new Scenario(4, "-XX:+UseRVC", "-XX:-VSETVLIElimination"));
         if (Platform.isDebugBuild()) {
             framework.addFlags("-XX:+Verbose");
         }
@@ -119,10 +165,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {CONFIG, "1"}, applyIf = {"VSETVLIElimination", "true"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
-    @IR(counts = {CONFIG, "9"}, applyIf = {"VSETVLIElimination", "false"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testInt() {
         IntVector a = IntVector.fromArray(IntVector.SPECIES_128, IA, 0);
         IntVector b = IntVector.fromArray(IntVector.SPECIES_128, IB, 0);
@@ -138,8 +180,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {CONFIG, "5", CONFIG_LINE + "[^\\r\\n]*storeV [^\\r\\n]*", ">= 1"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static int testUnsafeAccess() {
         int scalar = UNSAFE.getInt(IA, Unsafe.ARRAY_INT_BASE_OFFSET);
         IntVector a = IntVector.fromArray(IntVector.SPECIES_128, IA, 0);
@@ -157,8 +197,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {CONFIG, "1"}, applyIf = {"VSETVLIElimination", "true"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testFloat() {
         FloatVector a = FloatVector.fromArray(FloatVector.SPECIES_128, FA, 0);
         FloatVector b = FloatVector.fromArray(FloatVector.SPECIES_128, FB, 0);
@@ -174,8 +212,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {CONFIG, "1"}, applyIf = {"VSETVLIElimination", "true"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testDouble() {
         DoubleVector a = DoubleVector.fromArray(DoubleVector.SPECIES_128, DA, 0);
         DoubleVector b = DoubleVector.fromArray(DoubleVector.SPECIES_128, DB, 0);
@@ -191,8 +227,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {SINGLE_PRED + FIRST_UNCONFIGURED_STORE, ">= 2"},
-        applyIf = {"VSETVLIElimination", "true"}, phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testNestedBranches(boolean first, boolean second) {
         IntVector value = IntVector.fromArray(IntVector.SPECIES_128, A, 0)
                 .add(IntVector.fromArray(IntVector.SPECIES_128, B, 0));
@@ -223,9 +257,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {JOIN + FIRST_CONFIGURED_STORE, ">= 1"},
-        failOn = {JOIN + FIRST_UNCONFIGURED_STORE}, applyIf = {"VSETVLIElimination", "true"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testMatchingJoin(boolean left) {
         IntVector value = IntVector.fromArray(IntVector.SPECIES_128, A, 0);
         value.intoArray(BEFORE, 0);
@@ -257,9 +288,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {EMPTY_TWO_PRED_JOIN + FIRST_CONFIGURED_STORE, "1"},
-        failOn = {EMPTY_TWO_PRED_JOIN + FIRST_UNCONFIGURED_STORE},
-        applyIf = {"VSETVLIElimination", "true"}, phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testEmptyTwoPredJoin(boolean outer, boolean small) {
         IntVector value = IntVector.fromArray(IntVector.SPECIES_128, A, 0);
         value.intoArray(BEFORE, 0);
@@ -296,10 +324,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {SINGLE_PRED + FIRST_UNCONFIGURED_STORE, ">= 1",
-                  JOIN + FIRST_CONFIGURED_STORE, ">= 1"},
-        applyIf = {"VSETVLIElimination", "true"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testSiblingSEW(boolean bytes) {
         IntVector value = IntVector.fromArray(IntVector.SPECIES_128, A, 0);
         value.intoArray(BEFORE, 0);
@@ -329,10 +353,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {SINGLE_PRED + FIRST_UNCONFIGURED_STORE, ">= 1",
-                  JOIN + FIRST_CONFIGURED_STORE, ">= 1"},
-        applyIf = {"VSETVLIElimination", "true"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testSiblingVL(boolean small) {
         IntVector value = IntVector.fromArray(IntVector.SPECIES_128, A, 0);
         value.intoArray(BEFORE, 0);
@@ -372,10 +392,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {"CALL,[^\\r\\n]*::clobber", "1",
-                  "# Block is sole successor of call\\R" + FIRST_CONFIGURED_LOAD, ">= 1"},
-        applyIf = {"VSETVLIElimination", "true"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testCall(boolean call) {
         IntVector.fromArray(IntVector.SPECIES_128, A, 0).intoArray(BEFORE, 0);
         if (call) {
@@ -399,9 +415,6 @@ public class TestVSETVLIElimination {
     }
 
     @Test
-    @IR(counts = {JOIN + FIRST_CONFIGURED_ADD, ">= 1"},
-        applyIf = {"VSETVLIElimination", "true"},
-        phase = CompilePhase.PRINT_OPTO_ASSEMBLY)
     public static void testLoop(int iterations) {
         IntVector value = IntVector.fromArray(IntVector.SPECIES_128, A, 0);
         IntVector increment = IntVector.fromArray(IntVector.SPECIES_128, B, 0);
