@@ -2872,7 +2872,7 @@ void C2_MacroAssembler::element_compare(Register a1, Register a2, Register resul
                                         bool islatin, Label &DONE) {
   Assembler::SEW sew = islatin ? Assembler::e8 : Assembler::e16;
 
-  Label loop, medium2, medium4, wide, same;
+  Label loop, medium2, medium4, wide, compare, same;
   // v4 and v8 start non-overlapping register groups aligned for LMUL=m4.
   const VectorRegister va = v4;
   const VectorRegister vb = v8;
@@ -2886,6 +2886,7 @@ void C2_MacroAssembler::element_compare(Register a1, Register a2, Register resul
   mv(tmp1, elems_m1);
   bgt(cnt, tmp1, medium2);
   vsetvli(tmp1, cnt, sew, Assembler::m1, Assembler::ma, Assembler::ta);
+  bind(compare);
   vlex_v(va, a1, sew);
   vlex_v(vb, a2, sew);
   vmsne_vv(va, va, vb);
@@ -2898,24 +2899,14 @@ void C2_MacroAssembler::element_compare(Register a1, Register a2, Register resul
   mv(tmp1, 2 * elems_m1);
   bgt(cnt, tmp1, medium4);
   vsetvli(tmp1, cnt, sew, Assembler::m2, Assembler::ma, Assembler::ta);
-  vlex_v(va, a1, sew);
-  vlex_v(vb, a2, sew);
-  vmsne_vv(va, va, vb);
-  vfirst_m(tmp2, va);
-  bgez(tmp2, DONE);
-  j(same);
+  j(compare);
 
   // Medium input: one vl-bounded m4 compare.
   bind(medium4);
   mv(tmp1, elems_m4);
   bgt(cnt, tmp1, wide);
   vsetvli(tmp1, cnt, sew, Assembler::m4, Assembler::ma, Assembler::ta);
-  vlex_v(va, a1, sew);
-  vlex_v(vb, a2, sew);
-  vmsne_vv(va, va, vb);
-  vfirst_m(tmp2, va);
-  bgez(tmp2, DONE);
-  j(same);
+  j(compare);
 
   // Long input: full m4 groups at fixed vl, then one vl-bounded
   // compare covering the tail.
@@ -2936,11 +2927,7 @@ void C2_MacroAssembler::element_compare(Register a1, Register a2, Register resul
 
   // Tail: one vl-bounded compare covers the rest.
   vsetvli(tmp1, cnt, sew, Assembler::m4, Assembler::ma, Assembler::ta);
-  vlex_v(va, a1, sew);
-  vlex_v(vb, a2, sew);
-  vmsne_vv(va, va, vb);
-  vfirst_m(tmp2, va);
-  bgez(tmp2, DONE);
+  j(compare);
 
   bind(same);
   if (result != zr) {
